@@ -1,5 +1,5 @@
-ARG PYTHON_VERSION=3.9
-FROM registry.git.rwth-aachen.de/ebc/ebc_all/github_ci/bim2sim/bim2sim:dev-py${PYTHON_VERSION}
+ARG PYTHON_VERSION=3.10
+FROM bim2simbase
 
 # EnergyPlus part
 ENV ENERGYPLUS_VERSION=9.4.0
