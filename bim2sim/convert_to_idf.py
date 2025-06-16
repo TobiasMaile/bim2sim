@@ -7,7 +7,7 @@ from bim2sim.utilities.types import IFCDomain
 
 import sys
 
-def run(ifc_path, epw_path):
+def run(ifc_path, epw_path, ep_install_path = "/usr/local/bin/energyplus"):
     """Run a building performance simulation with the EnergyPlus backend.
 
     This example runs a BPS with the EnergyPlus backend. Specifies project
@@ -37,7 +37,7 @@ def run(ifc_path, epw_path):
             Path(epw_path))
     # Set the install path to your EnergyPlus installation according to your
     # system requirements
-    project.sim_settings.ep_install_path = 'C://EnergyPlusV9-4-0/'
+    project.sim_settings.ep_install_path = ep_install_path
 
     # run annual simulation for EnergyPlus
     project.sim_settings.run_full_simulation = False
@@ -52,7 +52,9 @@ def run(ifc_path, epw_path):
     run_project(project, ConsoleDecisionHandler())
 
 if __name__ == '__main__':
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 3:
+        run(sys.argv[1], sys.argv[2], sys.argv[3])
+    elif len(sys.argv) > 2:
         run(sys.argv[1], sys.argv[2])
     elif len(sys.argv) > 1:
         print("Please provide two files, IFC and EPW not just one")
