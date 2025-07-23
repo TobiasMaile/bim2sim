@@ -1,67 +1,55 @@
 ARG PYTHON_VERSION=3.10
 FROM mambaorg/micromamba:2.0.2
 
-# Redeclare the ARG after FROM, but don't set a default value
+# Declare ARG again after FROM
 ARG PYTHON_VERSION
 
 # Set the Python version as an environment variable
 ENV PYTHON_VERSION=${PYTHON_VERSION}
 
-# Copy the environment file
+# Ensure Micromamba uses UTF-8
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# Install Python + dependencies in base env
 COPY --chown=$MAMBA_USER:$MAMBA_USER env.yaml /tmp/env.yaml
-
-RUN echo "Python version argument: ${PYTHON_VERSION}"
-
-# Modify the env.yaml file to include the specified Python version
-RUN micromamba install -y -n base -c conda-forge python=${PYTHON_VERSION} pythonocc-core=7.7.0 pip gcc git --retry-clean-cache && \
+RUN micromamba install -y -n base -f /tmp/env.yaml && \
     micromamba clean --all --yes
 
 ENV GIT_PYTHON_GIT_EXECUTABLE=/opt/conda/bin/git
-
-# Copy files
-COPY --chown=$MAMBA_USER:$MAMBA_USER . .
-
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
-
 ENV PIP_DEFAULT_TIMEOUT=500
 
-# Install the package
-RUN pip install --no-cache-dir '.' -i https://pypi.org/simple
-RUN pip install --no-cache-dir -e '.[PluginEnergyPlus]'
+# Copy your source code (bim2sim) and set permissions
+COPY --chown=$MAMBA_USER:$MAMBA_USER . /home/$MAMBA_USER/bim2sim
 
-# EnergyPlus part
+# Install Python packages
+WORKDIR /home/$MAMBA_USER/bim2sim
+RUN micromamba run -n base pip install --no-cache-dir '.' -i https://pypi.org/simple
+RUN micromamba run -n base pip install --no-cache-dir -e '.[PluginEnergyPlus]'
+
+# EnergyPlus install
+USER root
 ENV ENERGYPLUS_VERSION=9.4.0
 ENV ENERGYPLUS_TAG=v9.4.0
 ENV ENERGYPLUS_SHA=998c4b761e
 ENV ENERGYPLUS_INSTALL_VERSION=9-4-0
-
 ENV ENERGYPLUS_DOWNLOAD_BASE_URL https://github.com/NREL/EnergyPlus/releases/download/$ENERGYPLUS_TAG
 ENV ENERGYPLUS_DOWNLOAD_FILENAME EnergyPlus-$ENERGYPLUS_VERSION-$ENERGYPLUS_SHA-Linux-Ubuntu18.04-x86_64.sh
 ENV ENERGYPLUS_DOWNLOAD_URL $ENERGYPLUS_DOWNLOAD_BASE_URL/$ENERGYPLUS_DOWNLOAD_FILENAME
 
-USER root
+RUN apt-get update && apt-get install -y ca-certificates curl libx11-6 libexpat1 && \
+    curl -SLO $ENERGYPLUS_DOWNLOAD_URL && \
+    chmod +x $ENERGYPLUS_DOWNLOAD_FILENAME && \
+    echo "y\r" | ./$ENERGYPLUS_DOWNLOAD_FILENAME && \
+    rm $ENERGYPLUS_DOWNLOAD_FILENAME && \
+    cd /usr/local/EnergyPlus-$ENERGYPLUS_INSTALL_VERSION && \
+    rm -rf DataSets Documentation ExampleFiles WeatherData MacroDataSets PostProcess/convertESOMTRpgm \
+           PostProcess/EP-Compare PreProcess/FMUParser PreProcess/ParametricPreProcessor PreProcess/IDFVersionUpdater && \
+    cd /usr/local/bin && find -L . -type l -delete
 
-# Install necessary packages and EnergyPlus
-RUN apt-get update && apt-get install -y ca-certificates curl libx11-6 libexpat1 \
-    && rm -rf /var/lib/apt/lists/*
+# Make sure all relevant files are accessible by the micromamba user
+RUN chown -R $MAMBA_USER:$MAMBA_USER /home/$MAMBA_USER /usr/local/EnergyPlus-$ENERGYPLUS_INSTALL_VERSION
 
-RUN curl -SLO --retry 5 --retry-delay 15 --retry-max-time 900 --connect-timeout 60 --max-time 3600 $ENERGYPLUS_DOWNLOAD_URL || \
-    (sleep 30 && curl -SLO --retry 5 --retry-delay 15 --retry-max-time 900 --connect-timeout 60 --max-time 3600 $ENERGYPLUS_DOWNLOAD_URL)
-
-RUN chmod +x $ENERGYPLUS_DOWNLOAD_FILENAME
-
-RUN echo "y\r" | ./$ENERGYPLUS_DOWNLOAD_FILENAME
-
-RUN rm $ENERGYPLUS_DOWNLOAD_FILENAME
-
-RUN cd /usr/local/EnergyPlus-$ENERGYPLUS_INSTALL_VERSION \
-    && rm -rf DataSets Documentation ExampleFiles WeatherData MacroDataSets PostProcess/convertESOMTRpgm \
-       PostProcess/EP-Compare PreProcess/FMUParser PreProcess/ParametricPreProcessor PreProcess/IDFVersionUpdater
-
-# Remove broken symlinks
-RUN cd /usr/local/bin && find -L . -type l -delete
-
+# Set working directory & volume
 USER $MAMBA_USER
-
+WORKDIR /home/$MAMBA_USER/bim2sim
 VOLUME /var/simdata/energyplus
-WORKDIR /var/simdata/energyplus

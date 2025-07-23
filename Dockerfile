@@ -16,6 +16,8 @@ RUN echo "Python version argument: ${PYTHON_VERSION}"
 RUN micromamba install -y -n base -c conda-forge python=${PYTHON_VERSION} pythonocc-core=7.7.0 pip gcc git --retry-clean-cache && \
     micromamba clean --all --yes
 
+ENV GIT_PYTHON_GIT_EXECUTABLE=/opt/conda/bin/git
+
 # Copy files
 COPY --chown=$MAMBA_USER:$MAMBA_USER . .
 
