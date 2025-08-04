@@ -1,18 +1,22 @@
 @echo off
 setlocal
 
+:: Set up log file
+set "LOGFILE=%TEMP%\IFCtoIDFconversion.log"
+echo [INFO] Starting BIM2SIM conversion > "%LOGFILE%"
+
 :: Check and assign parameters
 set "IFC_FILE=%~1"
 set "EPW_FILE=%~2"
 set "EPLUS_PATH=%~3"
 
 if "%IFC_FILE%"=="" (
-    echo [ERROR] Please provide the path to the IFC file as the first argument.
+    echo [ERROR] Missing IFC file path. >> "%LOGFILE%"
     exit /b 1
 )
 if "%EPW_FILE%"=="" (
-    echo [ERROR] Please provide the path to the EPW file as the second argument.
-    exit /b 1
+    echo [ERROR] Missing EPW file path. >> "%LOGFILE%"
+    exit /b 2
 )
 if "%EPLUS_PATH%"=="" set "EPLUS_PATH=/usr/local/EnergyPlus-9-4-0/"
 
@@ -22,29 +26,48 @@ for %%F in ("%IFC_FILE%") do set "IFC_BASE=%%~nF"
 for %%F in ("%EPW_FILE%") do set "EPW_NAME=%%~nxF"
 
 :: Start container
-docker run -dit --name ep epone
+docker run -dit --name ep epone >> "%LOGFILE%" 2>&1 || (
+    echo [ERROR] Failed to start Docker container. >> "%LOGFILE%"
+    exit /b 3
+)
 
 :: Copy files into container
-docker cp "%IFC_FILE%" ep:/tmp/
-docker cp "%EPW_FILE%" ep:/tmp/
+docker cp "%IFC_FILE%" ep:/tmp/ >> "%LOGFILE%" 2>&1 || (
+    echo [ERROR] Failed to copy IFC file. >> "%LOGFILE%"
+    exit /b 4
+)
+docker cp "%EPW_FILE%" ep:/tmp/ >> "%LOGFILE%" 2>&1 || (
+    echo [ERROR] Failed to copy EPW file. >> "%LOGFILE%"
+    exit /b 5
+)
 
-:: Run script
-docker exec ep micromamba run -n base python /home/mambauser/bim2sim/bim2sim/convert_to_idf.py /tmp/%IFC_NAME% /tmp/%EPW_NAME% %EPLUS_PATH%
+:: Run conversion script
+docker exec ep micromamba run -n base python /home/mambauser/bim2sim/bim2sim/convert_to_idf.py /tmp/%IFC_NAME% /tmp/%EPW_NAME% %EPLUS_PATH% >> "%LOGFILE%" 2>&1 || (
+    echo [ERROR] Python script execution failed. >> "%LOGFILE%"
+    exit /b 6
+)
 
-:: Find the folder inside /tmp starting with "gensim"
+:: Find gensim output directory
 for /f "delims=" %%G in ('docker exec ep sh -c "ls -d /tmp/gensim* 2>/dev/null"') do set "GENSIM_DIR=%%G"
 
-:: Compose the full path inside container
-set "IDF_CONTAINER_PATH=%GENSIM_DIR%/export/EnergyPlus/SimResults/%IFC_BASE%/%IFC_BASE%.idf"
+if not defined GENSIM_DIR (
+    echo [ERROR] gensim output directory not found. >> "%LOGFILE%"
+    exit /b 7
+)
 
-:: Local path to save the IDF
+:: Compose container and local paths
+set "IDF_CONTAINER_PATH=%GENSIM_DIR%/export/EnergyPlus/SimResults/%IFC_BASE%/%IFC_BASE%.idf"
 for %%F in ("%IFC_FILE%") do set "IFC_FOLDER=%%~dpF"
 set "LOCAL_IDF_PATH=%IFC_FOLDER%%IFC_BASE%.idf"
 
-:: Copy the file back
-docker cp ep:%IDF_CONTAINER_PATH% "%LOCAL_IDF_PATH%"
+:: Copy IDF file back to host
+docker cp ep:%IDF_CONTAINER_PATH% "%LOCAL_IDF_PATH%" >> "%LOGFILE%" 2>&1 || (
+    echo [ERROR] Failed to copy IDF file from container. >> "%LOGFILE%"
+    exit /b 8
+)
 
-echo Copied IDF file from %IDF_CONTAINER_PATH% to %LOCAL_IDF_PATH%
+echo [INFO] IDF file copied to: %LOCAL_IDF_PATH% >> "%LOGFILE%"
+echo [SUCCESS] Conversion completed. >> "%LOGFILE%"
 
 endlocal
-pause
+exit /b 0
