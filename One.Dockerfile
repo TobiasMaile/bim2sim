@@ -23,6 +23,7 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER . /home/$MAMBA_USER/bim2sim
 
 # Install Python packages
 WORKDIR /home/$MAMBA_USER/bim2sim
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0
 RUN micromamba run -n base pip install --no-cache-dir '.' -i https://pypi.org/simple
 RUN micromamba run -n base pip install --no-cache-dir -e '.[PluginEnergyPlus]'
 
